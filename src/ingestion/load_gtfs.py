@@ -19,12 +19,10 @@ from pyspark.sql.types import (
     StructType,
 )
 
+from config.geography import GM_LAT_MAX, GM_LAT_MIN, GM_LON_MAX, GM_LON_MIN
+
 GTFS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "timetables" / "north_west_gtfs"
 SILVER_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "processed" / "silver" / "gtfs_gm"
-
-# Greater Manchester Combined Authority area, approximated as a bounding box.
-GM_LAT_MIN, GM_LAT_MAX = 53.30, 53.65
-GM_LON_MIN, GM_LON_MAX = -2.75, -1.90
 
 STOPS_SCHEMA = StructType(
     [
