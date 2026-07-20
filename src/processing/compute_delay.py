@@ -26,7 +26,12 @@ SILVER = BASE / "data" / "processed" / "silver"
 GTFS_RAW = BASE / "data" / "raw" / "timetables" / "north_west_gtfs"
 OUT_DIR = SILVER / "delay_events"
 
-SERVICE_DATE = "20260701"
+# Service days to process. Each is (YYYYMMDD, gtfs_weekday_column). The GTFS timetable snapshot
+# (calendar valid 2026-06-30 onward) covers both days, so it is reused across them.
+SERVICE_DAYS = [
+    ("20260701", "wednesday"),
+    ("20260630", "tuesday"),
+]
 LOCAL_TZ = "Europe/London"
 
 # Match tolerances.
@@ -60,13 +65,16 @@ def _haversine_m(lat1, lon1, lat2, lon2):
     return r * 2 * F.asin(F.sqrt(a))
 
 
-def resolve_active_services(spark: SparkSession, service_date: str = SERVICE_DATE) -> DataFrame:
-    """Returns a single-column DataFrame of service_id values running on service_date (a Wednesday)."""
+def resolve_active_services(spark: SparkSession, service_date: str, weekday_col: str) -> DataFrame:
+    """Returns a single-column DataFrame of service_id values running on service_date.
+
+    weekday_col is the GTFS calendar day-of-week column for that date (e.g. 'wednesday').
+    """
     calendar = spark.read.csv(str(GTFS_RAW / "calendar.txt"), header=True)
     cal_dates = spark.read.csv(str(GTFS_RAW / "calendar_dates.txt"), header=True)
 
     base = calendar.filter(
-        (F.col("wednesday") == "1")
+        (F.col(weekday_col) == "1")
         & (F.col("start_date") <= service_date)
         & (F.col("end_date") >= service_date)
     ).select("service_id")
@@ -141,10 +149,15 @@ def map_journeys_to_trips(spark: SparkSession, trip_schedule: DataFrame, positio
     )
 
 
-def compute_delay_events(spark: SparkSession) -> DataFrame:
+def compute_delay_events_for_day(spark: SparkSession, service_date: str, weekday_col: str) -> DataFrame:
+    """Delay events for a single service day (source_date partition + matching active services)."""
     positions = (
         spark.read.parquet(str(SILVER / "sirivm_gm"))
-        .filter(F.to_date(F.from_utc_timestamp(F.to_timestamp("recorded_at"), LOCAL_TZ)) == F.to_date(F.lit("2026-07-01")))
+        .filter(F.col("source_date") == service_date)
+        .filter(
+            F.to_date(F.from_utc_timestamp(F.to_timestamp("recorded_at"), LOCAL_TZ))
+            == F.to_date(F.lit(service_date), "yyyyMMdd")
+        )
         .select(
             "operator_ref", "line_ref", "origin_aimed_departure", "vehicle_ref",
             "recorded_at", "latitude", "longitude",
@@ -152,7 +165,7 @@ def compute_delay_events(spark: SparkSession) -> DataFrame:
         .distinct()
     )
 
-    active = resolve_active_services(spark)
+    active = resolve_active_services(spark, service_date, weekday_col)
     trip_schedule = build_trip_schedule(spark, active).cache()
     journey_trip = map_journeys_to_trips(spark, trip_schedule, positions)
 
@@ -196,14 +209,24 @@ def compute_delay_events(spark: SparkSession) -> DataFrame:
         .filter(F.col("rn") == 1)
         .withColumn("delay_min", (F.col("ping_sec") - F.col("sched_sec")) / 60.0)
         .filter((F.col("delay_min") >= DELAY_MIN_CLAMP) & (F.col("delay_min") <= DELAY_MAX_CLAMP))
+        .withColumn("service_date", F.lit(service_date))
         .select(
-            "operator", "line", "direction_id", "trip_id", "vehicle_ref", "origin_aimed_departure",
-            "stop_id", "stop_sequence", "stop_lat", "stop_lon", "sched_sec", "ping_sec",
-            "dist_m", "delay_min",
+            "service_date", "operator", "line", "direction_id", "trip_id", "vehicle_ref",
+            "origin_aimed_departure", "stop_id", "stop_sequence", "stop_lat", "stop_lon",
+            "sched_sec", "ping_sec", "dist_m", "delay_min",
         )
     )
 
     return _drop_incoherent_journeys(raw_events)
+
+
+def compute_delay_events(spark: SparkSession, service_days=SERVICE_DAYS) -> DataFrame:
+    """Delay events across all configured service days, unioned into one table."""
+    per_day = [compute_delay_events_for_day(spark, date, weekday) for date, weekday in service_days]
+    result = per_day[0]
+    for df in per_day[1:]:
+        result = result.unionByName(df)
+    return result
 
 
 def _drop_incoherent_journeys(events: DataFrame) -> DataFrame:
@@ -217,7 +240,7 @@ def _drop_incoherent_journeys(events: DataFrame) -> DataFrame:
     genuinely, consistently late are retained. Journeys with <3 matched stops are kept as-is (too few
     points to assess consistency).
     """
-    key = ["trip_id", "vehicle_ref", "origin_aimed_departure"]
+    key = ["service_date", "trip_id", "vehicle_ref", "origin_aimed_departure"]
     journey_stats = events.groupBy(*key).agg(
         F.count("*").alias("journey_n_stops"),
         F.stddev("delay_min").alias("journey_delay_std"),

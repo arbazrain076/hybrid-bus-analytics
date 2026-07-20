@@ -18,8 +18,13 @@ from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 
 from config.geography import in_greater_manchester
 
-SIRIVM_ARCHIVE = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "sirivm" / "sirivm-20260701.zip"
+SIRIVM_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "sirivm"
 SIRI_NS = "{http://www.siri.org.uk/siri}"
+
+
+def archive_path(date_str: str) -> str:
+    """Path to the daily SIRI-VM archive for date_str (YYYYMMDD)."""
+    return str(SIRIVM_DIR / f"sirivm-{date_str}.zip")
 
 VEHICLE_ACTIVITY_SCHEMA = StructType(
     [
@@ -36,12 +41,13 @@ VEHICLE_ACTIVITY_SCHEMA = StructType(
         StructField("longitude", DoubleType(), True),
         StructField("latitude", DoubleType(), True),
         StructField("snapshot_file", StringType(), False),
+        StructField("source_date", StringType(), False),
     ]
 )
 
 
-def list_snapshot_names() -> list[str]:
-    with zipfile.ZipFile(SIRIVM_ARCHIVE) as outer:
+def list_snapshot_names(archive: str) -> list[str]:
+    with zipfile.ZipFile(archive) as outer:
         return [n for n in outer.namelist() if n.endswith(".zip")]
 
 
@@ -52,14 +58,14 @@ def _text(elem, tag) -> str | None:
     return child.text if child is not None else None
 
 
-def parse_snapshot(inner_name: str) -> list[dict]:
+def parse_snapshot(archive: str, inner_name: str, source_date: str) -> list[dict]:
     """Parses one nested snapshot zip and returns Greater Manchester vehicle activity rows only.
 
     A small number of nested snapshots in the archive are empty (0 bytes) or otherwise corrupt (observed:
     2 of 2,761 for 2026-07-01). These are skipped rather than aborting the whole run - a dropped ~30s
     snapshot is a negligible loss against a full day of position data.
     """
-    with zipfile.ZipFile(SIRIVM_ARCHIVE) as outer:
+    with zipfile.ZipFile(archive) as outer:
         inner_bytes = outer.read(inner_name)
 
     if not inner_bytes:
@@ -101,16 +107,21 @@ def parse_snapshot(inner_name: str) -> list[dict]:
                 "longitude": lon,
                 "latitude": lat,
                 "snapshot_file": inner_name,
+                "source_date": source_date,
             }
         )
     return rows
 
 
-def load_greater_manchester_sirivm(spark: SparkSession, sample_every_nth: int = 1) -> DataFrame:
-    names = list_snapshot_names()
+def load_greater_manchester_sirivm(
+    spark: SparkSession, date_str: str, sample_every_nth: int = 1
+) -> DataFrame:
+    archive = archive_path(date_str)
+    names = list_snapshot_names(archive)
     if sample_every_nth > 1:
         names = names[::sample_every_nth]
 
-    rdd = spark.sparkContext.parallelize(names, numSlices=8)
-    rows_rdd = rdd.flatMap(parse_snapshot)
+    tasks = [(archive, name, date_str) for name in names]
+    rdd = spark.sparkContext.parallelize(tasks, numSlices=8)
+    rows_rdd = rdd.flatMap(lambda t: parse_snapshot(t[0], t[1], t[2]))
     return spark.createDataFrame(rows_rdd, schema=VEHICLE_ACTIVITY_SCHEMA)

@@ -1,8 +1,8 @@
-"""Parses SIRI-VM snapshots and filters to Greater Manchester.
+"""Parses a day's SIRI-VM snapshots and filters to Greater Manchester.
 
-Usage: python scripts/run_sirivm_ingestion.py [sample_every_nth]
-Pass a sample_every_nth > 1 to subsample snapshots (e.g. 100 for a quick check across the whole day
-instead of parsing all 2,761 files).
+Usage: python scripts/run_sirivm_ingestion.py <YYYYMMDD> [sample_every_nth]
+Writes to data/processed/silver/sirivm_gm/ partitioned by source_date, appending the given day.
+Pass sample_every_nth > 1 to subsample snapshots for a quick check.
 """
 
 import sys
@@ -17,17 +17,22 @@ SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "processed" / "si
 
 
 def main() -> None:
-    sample_every_nth = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    if len(sys.argv) < 2:
+        raise SystemExit("Usage: run_sirivm_ingestion.py <YYYYMMDD> [sample_every_nth]")
+    date_str = sys.argv[1]
+    sample_every_nth = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
     spark = get_spark_session()
-    df = load_greater_manchester_sirivm(spark, sample_every_nth=sample_every_nth)
+    # Dynamic overwrite: re-running one day replaces only that day's partition, leaving other days intact.
+    spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
+
+    df = load_greater_manchester_sirivm(spark, date_str, sample_every_nth=sample_every_nth)
     df.cache()
 
     count = df.count()
-    print(f"sample_every_nth={sample_every_nth} -> Greater Manchester vehicle activity rows: {count}")
-    df.show(5, truncate=False)
+    print(f"{date_str} (sample_every_nth={sample_every_nth}) -> Greater Manchester rows: {count}")
 
-    df.write.mode("overwrite").parquet(str(SILVER_DIR))
+    df.write.mode("overwrite").partitionBy("source_date").parquet(str(SILVER_DIR))
     df.unpersist()
     spark.stop()
     print("SIRI-VM ingestion complete.")
