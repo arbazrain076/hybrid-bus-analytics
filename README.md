@@ -42,3 +42,18 @@ Verify the setup:
 ```
 python scripts/smoke_test.py
 ```
+
+## Database
+
+Relational storage uses **SQLite** (Python stdlib, no server/credentials needed) with a
+PostgreSQL-portable schema — see `sql/schema.sql` and `sql/er_diagram.md`. The database file path is read
+from the `BUS_DB_PATH` environment variable (copy `.env.example` to `.env` to override; `.env` is
+gitignored and must never hold committed credentials). If porting to PostgreSQL, supply connection
+details via env, never hard-coded.
+
+Load the cleaned analysis data into the DB (dimensions then fact, batch-inserted, foreign keys enforced):
+```
+python scripts/load_db.py
+```
+Sample parameterised analytical queries are in `sql/sample_queries.sql`. All DB access goes through the
+parameterised helpers in `src/database/db.py` — no string-built SQL anywhere.
