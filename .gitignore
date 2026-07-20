@@ -15,6 +15,7 @@ TOOLING.md
 
 data/raw/
 data/processed/
+outputs/
 outputs/spark_ui_screenshots/*.tmp
 spark-warehouse/
 .venv/
