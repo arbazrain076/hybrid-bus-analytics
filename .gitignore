@@ -1,0 +1,22 @@
+# University assignment brief — proprietary course material, not for public redistribution
+docs/assignment-brief.rtf
+
+# AI coding assistant scaffolding — local development tooling only, not part of the submitted project
+TOOLING.md
+TOOLING.md
+.project/
+.project/
+.project/
+
+data/raw/
+data/silver/
+outputs/spark_ui_screenshots/*.tmp
+spark-warehouse/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+*.sqlite
+*.db
+.ipynb_checkpoints/
