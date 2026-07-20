@@ -53,13 +53,24 @@ def _text(elem, tag) -> str | None:
 
 
 def parse_snapshot(inner_name: str) -> list[dict]:
-    """Parses one nested snapshot zip and returns Greater Manchester vehicle activity rows only."""
+    """Parses one nested snapshot zip and returns Greater Manchester vehicle activity rows only.
+
+    A small number of nested snapshots in the archive are empty (0 bytes) or otherwise corrupt (observed:
+    2 of 2,761 for 2026-07-01). These are skipped rather than aborting the whole run - a dropped ~30s
+    snapshot is a negligible loss against a full day of position data.
+    """
     with zipfile.ZipFile(SIRIVM_ARCHIVE) as outer:
         inner_bytes = outer.read(inner_name)
-    with zipfile.ZipFile(io.BytesIO(inner_bytes)) as inner:
-        xml_bytes = inner.read("siri.xml")
 
-    root = ET.fromstring(xml_bytes)
+    if not inner_bytes:
+        return []
+    try:
+        with zipfile.ZipFile(io.BytesIO(inner_bytes)) as inner:
+            xml_bytes = inner.read("siri.xml")
+        root = ET.fromstring(xml_bytes)
+    except (zipfile.BadZipFile, KeyError, ET.ParseError):
+        return []
+
     rows = []
     for activity in root.iter(f"{SIRI_NS}VehicleActivity"):
         mvj = activity.find(f"{SIRI_NS}MonitoredVehicleJourney")
