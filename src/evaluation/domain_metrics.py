@@ -1,6 +1,6 @@
 """Maps the reconstructed delay data onto the brief's transport-domain reliability metrics.
 
-Definitions (canonical source: `.project/skills/evaluation/SKILL.md`):
+Definitions (per the assignment brief's metric table):
 - Service Reliability: % of arrivals within +/-2 min (urban) of schedule; target >=85%.
 - Travel Time Variability (TTV): coefficient of variation (CV = std/mean) of observed trip duration;
   target CV <=15%. This is the natural domain target for the delay-regression model.

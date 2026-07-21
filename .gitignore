@@ -1,28 +1,22 @@
-# Planning/governance docs — kept local-only for now; add back explicitly when ready to publish
+# Planning/governance docs and course material — kept local, not published
 PROJECT_CONSTITUTION.md
 PROJECT_RULES.md
 docs/
 
-# University assignment brief — proprietary course material, not for public redistribution
-docs/assignment-brief.rtf
-
-# AI coding assistant scaffolding — local development tooling only, not part of the submitted project
-TOOLING.md
-TOOLING.md
-.project/
-.project/
-.project/
-
+# Data and generated outputs — regenerable, see README for the run order
 data/raw/
 data/processed/
 outputs/
-outputs/spark_ui_screenshots/*.tmp
 spark-warehouse/
+
+# Environment and secrets
 .venv/
 venv/
-__pycache__/
-*.pyc
 .env
 *.sqlite
 *.db
+
+# Python
+__pycache__/
+*.pyc
 .ipynb_checkpoints/

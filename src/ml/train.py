@@ -3,8 +3,8 @@
 Single category (regression), 3 MLlib models + a mean-predicting baseline, on a time-based split
 (train = 2026-06-30, test = 2026-07-01). All stochastic steps use SEED for reproducibility. Reports
 RMSE / MAE / R2, training time, and Model Efficiency for every model, plus a domain anchor (test-set
-Service Reliability = % of arrivals within +/-2 min of schedule). See ADR-004 and
-`.project/skills/evaluation/SKILL.md`.
+Service Reliability = % of arrivals within +/-2 min of schedule). See ADR-004 for the ratified model
+choices and the project's metric definitions.
 """
 
 import time
