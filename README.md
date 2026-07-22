@@ -41,11 +41,24 @@ flowchart LR
 - `src/evaluation/` — transport-domain reliability metrics
 - `src/database/` — parameterised SQLite access layer
 - `sql/` — schema, ER diagram, sample parameterised queries
+- `src/dashboard/` — read-only query layer behind the Streamlit dashboard
+- `src/reporting/` — report infographic generation
 - `scripts/` — entry-point scripts for each pipeline stage
-- `tests/` — target-leakage guard
+- `tests/` — leakage guard, cleaning, database security, dashboard and end-to-end smoke tests
 - `data/`, `outputs/` — gitignored (regenerable; see run order below)
 
-## Pipeline run order
+## Running the pipeline
+
+The whole pipeline runs from a single entry point, which sequences every stage in dependency order:
+
+```
+python scripts/run_pipeline.py              # run all stages
+python scripts/run_pipeline.py --dry-run    # list stages without running
+python scripts/run_pipeline.py --only ml    # run a single stage
+python scripts/run_pipeline.py --from compute_delay   # resume from a stage
+```
+
+Individual stages can still be run directly:
 
 ```
 python scripts/smoke_test.py                        # verify Spark setup
@@ -56,13 +69,37 @@ python scripts/run_compute_delay.py                 # reconstruct delay events
 python scripts/load_db.py                           # load relational DB
 python scripts/run_ml.py                            # train + compare models
 python scripts/run_domain_metrics.py                # Service Reliability / TTV
-python scripts/run_visualize.py                     # figures
+python scripts/run_visualize.py                     # core figures
+python scripts/run_extended_eda.py                  # extended EDA + metrics charts
+python scripts/run_diagrams.py                      # report infographics
 python scripts/capture_spark_evidence.py --hold 180 # Spark evidence + UI screenshot
-pytest tests/                                       # leakage guard
 ```
 
 Raw data is not committed; download the two SIRI-VM day archives and the timetable archive from the
 sources documented in the project's decision log, into `data/raw/`.
+
+## Dashboard
+
+An optional Streamlit dashboard presents the results already produced by the pipeline — headline
+reliability against target, per-operator and per-line compliance drill-down, and the model comparison.
+It computes nothing itself, so it cannot disagree with the report.
+
+```
+streamlit run dashboard_app.py
+```
+
+Requires the relational database to have been loaded (`python scripts/load_db.py`).
+
+## Tests
+
+```
+pytest tests/           # full suite
+pytest tests/ -m "not slow" --ignore=tests/test_pipeline_smoke.py   # skip the Spark smoke test
+```
+
+Covers the target-leakage guard, data-cleaning and geographic filtering, SIRI-VM parser resilience to
+corrupt snapshots, database injection safety and foreign-key enforcement, dashboard query safety, and an
+end-to-end train-and-predict smoke test on a data sample.
 
 ## Setup
 
